@@ -1,170 +1,72 @@
-from flask import Flask, request, jsonify
-from telegram import Bot
-from dotenv import load_dotenv
-import os
-import random
-import time
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes
+)
 
-load_dotenv()
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_USERNAME = os.getenv("BOT_USERNAME")
+registered_users = {}
 
-bot = Bot(token=BOT_TOKEN)
+async def start(
 
-app = Flask(__name__)
+    update: Update,
 
-# Temporary OTP storage
-otp_store = {}
+    context: ContextTypes.DEFAULT_TYPE
+):
 
-OTP_EXPIRY = 35  # seconds
+    user = update.effective_user
 
+    username = user.username
 
-@app.route("/")
-def home():
+    telegram_id = user.id
 
-    return "NetBridge Telegram OTP Backend Running"
+    first_name = user.first_name
 
+    language = user.language_code
 
+    if username:
+
+        registered_users[
+            username.lower()
+        ] = telegram_id
+
+    registered_users[
+        str(telegram_id)
+    ] = telegram_id
+
+    message = f"""
+✅ NetBridge Connected
+
+Username: @{username}
+
+ID: {telegram_id}
+
+First: {first_name}
+
+Lang: {language}
+
+You can now return to the app and login securely.
 """
-Request OTP
-"""
-@app.route("/request_otp", methods=["POST"])
-def request_otp():
 
-    data = request.json
-
-    telegram_id = data.get("telegram_id")
-
-    if not telegram_id:
-
-        return jsonify({
-            "success": False,
-            "message": "telegram_id missing"
-        }), 400
-
-    otp = str(
-        random.randint(100000, 999999)
+    await update.message.reply_text(
+        message
     )
 
-    expiry = time.time() + OTP_EXPIRY
+app = (
+    ApplicationBuilder()
+    .token(BOT_TOKEN)
+    .build()
+)
 
-    otp_store[str(telegram_id)] = {
-        "otp": otp,
-        "expiry": expiry,
-        "used": False
-    }
-
-    try:
-
-        bot.send_message(
-
-            chat_id=telegram_id,
-
-            text=
-            f"🔐 NetBridge OTP\n\n"
-            f"Your OTP: {otp}\n\n"
-            f"Expires in 35 seconds."
-        )
-
-        return jsonify({
-            "success": True,
-            "message": "OTP sent"
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
-
-
-"""
-Verify OTP
-"""
-@app.route("/verify_otp", methods=["POST"])
-def verify_otp():
-
-    data = request.json
-
-    telegram_id = str(
-        data.get("telegram_id")
+app.add_handler(
+    CommandHandler(
+        "start",
+        start
     )
+)
 
-    otp = data.get("otp")
+print("BOT STARTED")
 
-    if telegram_id not in otp_store:
-
-        return jsonify({
-            "success": False,
-            "message": "OTP not found"
-        }), 400
-
-    stored = otp_store[telegram_id]
-
-    if stored["used"]:
-
-        return jsonify({
-            "success": False,
-            "message": "OTP already used"
-        }), 400
-
-    if time.time() > stored["expiry"]:
-
-        return jsonify({
-            "success": False,
-            "message": "OTP expired"
-        }), 400
-
-    if stored["otp"] != otp:
-
-        return jsonify({
-            "success": False,
-            "message": "Invalid OTP"
-        }), 400
-
-    stored["used"] = True
-
-    return jsonify({
-        "success": True,
-        "message": "Login successful"
-    })
-
-
-"""
-Get Telegram User ID
-"""
-@app.route("/telegram_id", methods=["POST"])
-def telegram_id():
-
-    data = request.json
-
-    updates = bot.get_updates()
-
-    for update in updates:
-
-        if update.message:
-
-            username = update.message.from_user.username
-
-            if username == data.get("username"):
-
-                return jsonify({
-                    "success": True,
-                    "telegram_id":
-                    update.message.chat_id
-                })
-
-    return jsonify({
-        "success": False,
-        "message": "User not found. Start bot first."
-    })
-
-
-if __name__ == "__main__":
-
-    app.run(
-        host="0.0.0.0",
-        port=10000
-    )
+app.run_polling()
