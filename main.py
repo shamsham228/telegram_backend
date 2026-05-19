@@ -32,7 +32,7 @@ def telegram_webhook():
 
     data = request.json
 
-    if "message" not in data:
+    if not data or "message" not in data:
         return "ok"
 
     message = data["message"]
@@ -81,8 +81,11 @@ def telegram_webhook():
 
                 "text":
 
-                    "Welcome to NetBridge\n\n"
-                    "Press button below to share your phone number.",
+                    f"Connected Successfully\n\n"
+                    f"Username: @{username}\n"
+                    f"Id: {chat_id}\n"
+                    f"First: {first_name}\n\n"
+                    f"Press button below to share your phone number.",
 
                 "reply_markup": {
 
@@ -133,20 +136,18 @@ def telegram_webhook():
     return "ok"
 
 # -----------------------------
-# SEND OTP
+# FIND USER
 # -----------------------------
 
-@app.route("/send_otp", methods=["POST"])
-def send_otp():
+def find_user(identifier):
 
-    data = request.json
+    clean_identifier = (
 
-    identifier = data.get(
-        "identifier",
-        ""
-    ).replace("@", "").lower()
-
-    matched_user = None
+        identifier
+        .replace("@", "")
+        .replace("+", "")
+        .lower()
+    )
 
     for user in users.values():
 
@@ -160,11 +161,6 @@ def send_otp():
             ""
         ).replace("+", "")
 
-        clean_identifier = identifier.replace(
-            "+",
-            ""
-        )
-
         if (
 
             saved_username == clean_identifier
@@ -174,9 +170,27 @@ def send_otp():
             saved_phone == clean_identifier
         ):
 
-            matched_user = user
+            return user
 
-            break
+    return None
+
+# -----------------------------
+# SEND OTP
+# -----------------------------
+
+@app.route("/send_otp", methods=["POST"])
+def send_otp():
+
+    data = request.json
+
+    identifier = data.get(
+        "identifier",
+        ""
+    )
+
+    matched_user = find_user(
+        identifier
+    )
 
     if matched_user is None:
 
@@ -232,10 +246,15 @@ def send_otp():
     ).json()
 
     # -----------------------------
-    # GET MESSAGE ID
+    # SAFE MESSAGE ID
     # -----------------------------
 
-    message_id = response["result"]["message_id"]
+    message_id = response.get(
+        "result",
+        {}
+    ).get(
+        "message_id"
+    )
 
     # -----------------------------
     # AUTO DELETE OTP
@@ -247,23 +266,26 @@ def send_otp():
 
         try:
 
-            requests.post(
+            if message_id:
 
-                f"{BASE_URL}/deleteMessage",
+                requests.post(
 
-                json={
+                    f"{BASE_URL}/deleteMessage",
 
-                    "chat_id": chat_id,
+                    json={
 
-                    "message_id": message_id
-                }
-            )
+                        "chat_id": chat_id,
+
+                        "message_id": message_id
+                    }
+                )
 
         except:
             pass
 
     threading.Thread(
-        target=delete_message
+        target=delete_message,
+        daemon=True
     ).start()
 
     return jsonify({
@@ -283,44 +305,16 @@ def verify_otp():
     identifier = data.get(
         "identifier",
         ""
-    ).replace("@", "").lower()
+    )
 
     otp = data.get(
         "otp",
         ""
     )
 
-    matched_user = None
-
-    for user in users.values():
-
-        saved_username = user.get(
-            "username",
-            ""
-        ).lower()
-
-        saved_phone = user.get(
-            "phone",
-            ""
-        ).replace("+", "")
-
-        clean_identifier = identifier.replace(
-            "+",
-            ""
-        )
-
-        if (
-
-            saved_username == clean_identifier
-
-            or
-
-            saved_phone == clean_identifier
-        ):
-
-            matched_user = user
-
-            break
+    matched_user = find_user(
+        identifier
+    )
 
     if matched_user is None:
 
