@@ -3,24 +3,28 @@ import requests
 import random
 import time
 import threading
+import os
 
 app = Flask(__name__)
 
-import os
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# saved telegram users
+# -----------------------------
+# SAVED USERS
+# -----------------------------
+
 users = {}
 
-# active OTPs
+# -----------------------------
+# ACTIVE OTPS
+# -----------------------------
+
 otp_store = {}
 
 # -----------------------------
-# TELEGRAM UPDATE WEBHOOK
+# TELEGRAM WEBHOOK
 # -----------------------------
 
 @app.route("/telegram", methods=["POST"])
@@ -45,18 +49,26 @@ def telegram_webhook():
         ""
     )
 
-    text = message.get("text", "")
+    text = message.get(
+        "text",
+        ""
+    )
 
-    # SAVE USER AFTER /start
+    # -----------------------------
+    # /START
+    # -----------------------------
+
     if text == "/start":
 
-        users[username] = {
+        users[chat_id] = {
 
             "chat_id": chat_id,
 
             "username": username,
 
-            "first_name": first_name
+            "first_name": first_name,
+
+            "phone": ""
         }
 
         requests.post(
@@ -69,10 +81,52 @@ def telegram_webhook():
 
                 "text":
 
-                    f"Connected Successfully\n\n"
-                    f"@{username}\n"
-                    f"ID: {chat_id}\n"
-                    f"First: {first_name}"
+                    "Welcome to NetBridge\n\n"
+                    "Press button below to share your phone number.",
+
+                "reply_markup": {
+
+                    "keyboard": [
+
+                        [
+                            {
+                                "text": "Share Phone Number",
+                                "request_contact": True
+                            }
+                        ]
+                    ],
+
+                    "resize_keyboard": True,
+
+                    "one_time_keyboard": True
+                }
+            }
+        )
+
+    # -----------------------------
+    # SAVE PHONE NUMBER
+    # -----------------------------
+
+    if "contact" in message:
+
+        phone = message["contact"]["phone_number"]
+
+        if chat_id in users:
+
+            users[chat_id]["phone"] = phone
+
+        requests.post(
+
+            f"{BASE_URL}/sendMessage",
+
+            json={
+
+                "chat_id": chat_id,
+
+                "text":
+
+                    "Phone number saved successfully.\n\n"
+                    "You can now login inside NetBridge."
             }
         )
 
@@ -87,12 +141,44 @@ def send_otp():
 
     data = request.json
 
-    username = data.get(
-        "username",
+    identifier = data.get(
+        "identifier",
         ""
     ).replace("@", "").lower()
 
-    if username not in users:
+    matched_user = None
+
+    for user in users.values():
+
+        saved_username = user.get(
+            "username",
+            ""
+        ).lower()
+
+        saved_phone = user.get(
+            "phone",
+            ""
+        ).replace("+", "")
+
+        clean_identifier = identifier.replace(
+            "+",
+            ""
+        )
+
+        if (
+
+            saved_username == clean_identifier
+
+            or
+
+            saved_phone == clean_identifier
+        ):
+
+            matched_user = user
+
+            break
+
+    if matched_user is None:
 
         return jsonify({
 
@@ -102,9 +188,11 @@ def send_otp():
                 "User not found. Open bot and press /start first."
         })
 
-    user = users[username]
+    chat_id = matched_user["chat_id"]
 
-    chat_id = user["chat_id"]
+    # -----------------------------
+    # GENERATE OTP
+    # -----------------------------
 
     otp = str(
 
@@ -116,14 +204,18 @@ def send_otp():
 
     expiry = int(time.time()) + 35
 
-    otp_store[username] = {
+    otp_store[chat_id] = {
 
         "otp": otp,
 
         "expiry": expiry
     }
 
-    message = requests.post(
+    # -----------------------------
+    # SEND OTP MESSAGE
+    # -----------------------------
+
+    response = requests.post(
 
         f"{BASE_URL}/sendMessage",
 
@@ -139,9 +231,16 @@ def send_otp():
         }
     ).json()
 
-    message_id = message["result"]["message_id"]
+    # -----------------------------
+    # GET MESSAGE ID
+    # -----------------------------
 
+    message_id = response["result"]["message_id"]
+
+    # -----------------------------
     # AUTO DELETE OTP
+    # -----------------------------
+
     def delete_message():
 
         time.sleep(35)
@@ -181,14 +280,60 @@ def verify_otp():
 
     data = request.json
 
-    username = data.get(
-        "username",
+    identifier = data.get(
+        "identifier",
         ""
     ).replace("@", "").lower()
 
-    otp = data.get("otp", "")
+    otp = data.get(
+        "otp",
+        ""
+    )
 
-    if username not in otp_store:
+    matched_user = None
+
+    for user in users.values():
+
+        saved_username = user.get(
+            "username",
+            ""
+        ).lower()
+
+        saved_phone = user.get(
+            "phone",
+            ""
+        ).replace("+", "")
+
+        clean_identifier = identifier.replace(
+            "+",
+            ""
+        )
+
+        if (
+
+            saved_username == clean_identifier
+
+            or
+
+            saved_phone == clean_identifier
+        ):
+
+            matched_user = user
+
+            break
+
+    if matched_user is None:
+
+        return jsonify({
+
+            "success": False,
+
+            "message": "User not found"
+        })
+
+    chat_id = matched_user["chat_id"]
+
+    if chat_id not in otp_store:
 
         return jsonify({
 
@@ -197,11 +342,15 @@ def verify_otp():
             "message": "OTP expired"
         })
 
-    saved = otp_store[username]
+    saved = otp_store[chat_id]
+
+    # -----------------------------
+    # EXPIRED
+    # -----------------------------
 
     if int(time.time()) > saved["expiry"]:
 
-        del otp_store[username]
+        del otp_store[chat_id]
 
         return jsonify({
 
@@ -209,6 +358,10 @@ def verify_otp():
 
             "message": "OTP expired"
         })
+
+    # -----------------------------
+    # INVALID OTP
+    # -----------------------------
 
     if saved["otp"] != otp:
 
@@ -219,13 +372,19 @@ def verify_otp():
             "message": "Invalid OTP"
         })
 
-    del otp_store[username]
+    # -----------------------------
+    # SUCCESS
+    # -----------------------------
+
+    del otp_store[chat_id]
 
     return jsonify({
 
         "success": True
     })
 
+# -----------------------------
+# HOME
 # -----------------------------
 
 @app.route("/")
@@ -234,10 +393,14 @@ def home():
     return "Telegram OTP Backend Running"
 
 # -----------------------------
+# START
+# -----------------------------
 
 if __name__ == "__main__":
 
     app.run(
+
         host="0.0.0.0",
+
         port=10000
     )
