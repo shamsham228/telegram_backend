@@ -6,7 +6,10 @@ import threading
 
 app = Flask(__name__)
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
