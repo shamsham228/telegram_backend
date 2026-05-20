@@ -1,9 +1,19 @@
-from flask import Flask, request, jsonify
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    g
+)
+
 import requests
 import random
 import time
 import threading
 import os
+
+from security.auth_middleware import (
+    AuthMiddleware
+)
 
 from security.request_verifier import (
     RequestVerifier
@@ -153,7 +163,7 @@ def verify_secure_request():
     )
 
     # --------------------------------
-    # INVALID
+    # INVALID REQUEST
     # --------------------------------
 
     if not valid:
@@ -646,6 +656,44 @@ def verify_otp():
     return jsonify({
 
         "success": True
+    })
+
+# --------------------------------
+# PROTECTED API
+# --------------------------------
+
+@app.route(
+
+    "/secure_data",
+
+    methods=["POST"]
+)
+def secure_data():
+
+    auth = (
+
+        AuthMiddleware
+        .verify_request()
+    )
+
+    if auth:
+        return auth
+
+    return jsonify({
+
+        "success": True,
+
+        "message":
+            "Secure endpoint accessed",
+
+        "user_id":
+            g.user_id,
+
+        "device_id":
+            g.device_id,
+
+        "session_id":
+            g.session_id
     })
 
 # --------------------------------
