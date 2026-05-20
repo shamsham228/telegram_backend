@@ -3,12 +3,18 @@ import base64
 import hashlib
 import time
 
-USED_NONCES = set()
+from security.nonce_store import (
+    NonceStore
+)
 
 MAX_REQUEST_AGE = 60
 
 
 class RequestVerifier:
+
+    # --------------------------------
+    # GENERATE SECRET
+    # --------------------------------
 
     @staticmethod
     def generate_secret(
@@ -29,6 +35,10 @@ class RequestVerifier:
         return base64.b64encode(
             digest
         ).decode()
+
+    # --------------------------------
+    # CREATE SIGNATURE
+    # --------------------------------
 
     @staticmethod
     def create_signature(
@@ -52,6 +62,10 @@ class RequestVerifier:
             signature
         ).decode()
 
+    # --------------------------------
+    # VERIFY REQUEST
+    # --------------------------------
+
     @staticmethod
     def verify_request(
 
@@ -68,79 +82,117 @@ class RequestVerifier:
         received_signature: str
     ) -> bool:
 
-        """
-        REPLAY CHECK
-        """
+        try:
 
-        if nonce in USED_NONCES:
-            return False
+            # --------------------------------
+            # EMPTY CHECK
+            # --------------------------------
 
-        """
-        TIMESTAMP CHECK
-        """
+            if (
 
-        current_time = int(time.time())
+                not timestamp or
+                not nonce or
+                not device_id or
+                not access_token or
+                not received_signature
 
-        request_time = int(
-            int(timestamp) / 1000
-        )
+            ):
 
-        if abs(
-            current_time - request_time
-        ) > MAX_REQUEST_AGE:
+                return False
 
-            return False
+            # --------------------------------
+            # TIMESTAMP CHECK
+            # --------------------------------
 
-        """
-        STORE NONCE
-        """
-
-        USED_NONCES.add(
-            nonce
-        )
-
-        """
-        BUILD PAYLOAD
-        """
-
-        payload = (
-            f"{body}|"
-            f"{timestamp}|"
-            f"{nonce}|"
-            f"{device_id}"
-        )
-
-        """
-        SECRET
-        """
-
-        secret = (
-            RequestVerifier
-            .generate_secret(
-
-                access_token,
-
-                device_id
+            current_time = int(
+                time.time()
             )
-        )
 
-        """
-        EXPECTED SIGNATURE
-        """
-
-        expected = (
-            RequestVerifier
-            .create_signature(
-
-                payload,
-
-                secret
+            request_time = int(
+                int(timestamp) / 1000
             )
-        )
 
-        return hmac.compare_digest(
+            if abs(
 
-            expected,
+                current_time -
+                request_time
 
-            received_signature
-        )
+            ) > MAX_REQUEST_AGE:
+
+                return False
+
+            # --------------------------------
+            # NONCE VALIDATION
+            # --------------------------------
+
+            nonce_valid = (
+
+                NonceStore
+                .validate_nonce(
+                    nonce
+                )
+            )
+
+            if not nonce_valid:
+
+                return False
+
+            # --------------------------------
+            # BUILD PAYLOAD
+            # --------------------------------
+
+            payload = (
+
+                f"{body}|"
+
+                f"{timestamp}|"
+
+                f"{nonce}|"
+
+                f"{device_id}"
+            )
+
+            # --------------------------------
+            # GENERATE SECRET
+            # --------------------------------
+
+            secret = (
+
+                RequestVerifier
+                .generate_secret(
+
+                    access_token,
+
+                    device_id
+                )
+            )
+
+            # --------------------------------
+            # EXPECTED SIGNATURE
+            # --------------------------------
+
+            expected = (
+
+                RequestVerifier
+                .create_signature(
+
+                    payload,
+
+                    secret
+                )
+            )
+
+            # --------------------------------
+            # COMPARE SIGNATURES
+            # --------------------------------
+
+            return hmac.compare_digest(
+
+                expected,
+
+                received_signature
+            )
+
+        except Exception:
+
+            return False
