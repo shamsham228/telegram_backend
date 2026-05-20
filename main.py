@@ -39,6 +39,10 @@ from security.otp_store import (
     OtpStore
 )
 
+from security.rate_limiter import (
+    RateLimiter
+)
+
 app = Flask(__name__)
 
 # --------------------------------
@@ -50,7 +54,6 @@ BOT_TOKEN = os.getenv(
 )
 
 BASE_URL = (
-
     f"https://api.telegram.org/"
     f"bot{BOT_TOKEN}"
 )
@@ -413,6 +416,34 @@ def send_otp():
         ""
     )
 
+    # --------------------------------
+    # RATE LIMIT
+    # --------------------------------
+
+    ip = request.remote_addr
+
+    allowed = (
+
+        RateLimiter
+        .allow_otp_send(
+
+            identifier,
+
+            ip
+        )
+    )
+
+    if not allowed:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Too many OTP requests"
+
+        }), 429
+
     matched_user = find_user(
         identifier
     )
@@ -578,6 +609,34 @@ def verify_otp():
         ""
     )
 
+    # --------------------------------
+    # RATE LIMIT
+    # --------------------------------
+
+    ip = request.remote_addr
+
+    allowed = (
+
+        RateLimiter
+        .allow_otp_verify(
+
+            identifier,
+
+            ip
+        )
+    )
+
+    if not allowed:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Too many verification attempts"
+
+        }), 429
+
     matched_user = find_user(
         identifier
     )
@@ -694,6 +753,29 @@ def refresh_token():
     refresh_token = request.json.get(
         "refresh_token"
     )
+
+    # --------------------------------
+    # RATE LIMIT
+    # --------------------------------
+
+    allowed = (
+
+        RateLimiter
+        .allow_refresh(
+            "global"
+        )
+    )
+
+    if not allowed:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Too many refresh requests"
+
+        }), 429
 
     if not refresh_token:
 
