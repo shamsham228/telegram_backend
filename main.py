@@ -19,6 +19,10 @@ from security.request_verifier import (
     RequestVerifier
 )
 
+from security.refresh_handler import (
+    RefreshHandler
+)
+
 from security.session_store import (
     register_session,
     validate_session,
@@ -710,6 +714,52 @@ def home():
         "message":
             "NetBridge Secure Backend Running"
     })
+
+
+# --------------------------------
+# REFRESH TOKEN
+# --------------------------------
+
+@app.route(
+
+    "/refresh_token",
+
+    methods=["POST"]
+)
+def refresh_token():
+
+    refresh_token = request.json.get(
+        "refresh_token"
+    )
+
+    if not refresh_token:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Missing refresh token"
+
+        }), 400
+
+    refreshed = (
+
+        RefreshHandler
+        .refresh_access_token(
+            refresh_token
+        )
+    )
+
+    if not refreshed["success"]:
+
+        return jsonify(
+            refreshed
+        ), 401
+
+    return jsonify(
+        refreshed
+    )
 
 # --------------------------------
 # START SERVER
