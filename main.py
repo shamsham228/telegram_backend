@@ -35,6 +35,10 @@ from security.fraud_detector import (
     is_blocked
 )
 
+from security.otp_store import (
+    OtpStore
+)
+
 app = Flask(__name__)
 
 # --------------------------------
@@ -56,12 +60,6 @@ BASE_URL = (
 # --------------------------------
 
 users = {}
-
-# --------------------------------
-# OTP STORE
-# --------------------------------
-
-otp_store = {}
 
 # --------------------------------
 # SECURE REQUEST VERIFICATION
@@ -455,19 +453,18 @@ def send_otp():
         )
     )
 
-    expiry = (
+    # --------------------------------
+    # SAVE OTP IN REDIS
+    # --------------------------------
 
-        int(time.time()) + 35
+    OtpStore.save_otp(
+
+        chat_id=chat_id,
+
+        otp=otp,
+
+        expiry_seconds=35
     )
-
-    otp_store[chat_id] = {
-
-        "otp":
-            otp,
-
-        "expiry":
-            expiry
-    }
 
     # --------------------------------
     # SEND TELEGRAM MESSAGE
@@ -585,10 +582,6 @@ def verify_otp():
         identifier
     )
 
-    # --------------------------------
-    # USER NOT FOUND
-    # --------------------------------
-
     if matched_user is None:
 
         return jsonify({
@@ -604,30 +597,14 @@ def verify_otp():
     ]
 
     # --------------------------------
-    # OTP EXPIRED
+    # GET OTP FROM REDIS
     # --------------------------------
 
-    if chat_id not in otp_store:
-
-        return jsonify({
-
-            "success": False,
-
-            "message":
-                "OTP expired"
-        })
-
-    saved = otp_store[
+    saved = OtpStore.get_otp(
         chat_id
-    ]
+    )
 
-    # --------------------------------
-    # EXPIRED TIME
-    # --------------------------------
-
-    if int(time.time()) > saved["expiry"]:
-
-        del otp_store[chat_id]
+    if not saved:
 
         return jsonify({
 
@@ -652,10 +629,12 @@ def verify_otp():
         })
 
     # --------------------------------
-    # SUCCESS
+    # DELETE OTP
     # --------------------------------
 
-    del otp_store[chat_id]
+    OtpStore.delete_otp(
+        chat_id
+    )
 
     return jsonify({
 
@@ -701,22 +680,6 @@ def secure_data():
     })
 
 # --------------------------------
-# HEALTH CHECK
-# --------------------------------
-
-@app.route("/")
-def home():
-
-    return jsonify({
-
-        "success": True,
-
-        "message":
-            "NetBridge Secure Backend Running"
-    })
-
-
-# --------------------------------
 # REFRESH TOKEN
 # --------------------------------
 
@@ -760,6 +723,21 @@ def refresh_token():
     return jsonify(
         refreshed
     )
+
+# --------------------------------
+# HEALTH CHECK
+# --------------------------------
+
+@app.route("/")
+def home():
+
+    return jsonify({
+
+        "success": True,
+
+        "message":
+            "NetBridge Secure Backend Running"
+    })
 
 # --------------------------------
 # START SERVER
