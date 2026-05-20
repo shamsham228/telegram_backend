@@ -4,27 +4,38 @@ import random
 import time
 import threading
 import os
-from security.request_verifier import RequestVerifier
+
+from security.request_verifier import (
+    RequestVerifier
+)
+
+from security.session_store import (
+    register_session,
+    validate_session,
+    revoke_session
+)
+
+from security.fraud_detector import (
+    record_failure,
+    clear_failures,
+    is_blocked
+)
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
 # --------------------------------
-# SECURITY STORAGE
+# ENV
 # --------------------------------
 
-USED_NONCES = set()
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN"
+)
 
-FAILED_REQUESTS = {}
+BASE_URL = (
 
-ACTIVE_SESSIONS = {}
-
-MAX_FAILS = 10
-
-MAX_REQUEST_AGE = 60
+    f"https://api.telegram.org/"
+    f"bot{BOT_TOKEN}"
+)
 
 # --------------------------------
 # USERS
@@ -39,64 +50,6 @@ users = {}
 otp_store = {}
 
 # --------------------------------
-# FRAUD DETECTION
-# --------------------------------
-
-def record_failure(ip):
-
-    FAILED_REQUESTS[ip] = (
-
-        FAILED_REQUESTS.get(
-            ip,
-            0
-        ) + 1
-    )
-
-def is_blocked(ip):
-
-    return FAILED_REQUESTS.get(
-        ip,
-        0
-    ) >= MAX_FAILS
-
-# --------------------------------
-# SESSION STORE
-# --------------------------------
-
-def register_session(
-
-    user_id,
-
-    session_id
-):
-
-    ACTIVE_SESSIONS[
-        user_id
-    ] = session_id
-
-def validate_session(
-
-    user_id,
-
-    session_id
-):
-
-    return ACTIVE_SESSIONS.get(
-        user_id
-    ) == session_id
-
-def revoke_session(
-
-    user_id
-):
-
-    if user_id in ACTIVE_SESSIONS:
-
-        del ACTIVE_SESSIONS[
-            user_id
-        ]
-
-# --------------------------------
 # SECURE REQUEST VERIFICATION
 # --------------------------------
 
@@ -104,9 +57,9 @@ def verify_secure_request():
 
     ip = request.remote_addr
 
-    # -----------------------------
+    # --------------------------------
     # BLOCKED IP
-    # -----------------------------
+    # --------------------------------
 
     if is_blocked(ip):
 
@@ -119,9 +72,9 @@ def verify_secure_request():
 
         }), 429
 
-    # -----------------------------
+    # --------------------------------
     # HEADERS
-    # -----------------------------
+    # --------------------------------
 
     timestamp = request.headers.get(
         "X-Timestamp"
@@ -143,9 +96,9 @@ def verify_secure_request():
         "X-Device-ID"
     )
 
-    # -----------------------------
+    # --------------------------------
     # EMPTY CHECK
-    # -----------------------------
+    # --------------------------------
 
     if (
 
@@ -168,19 +121,20 @@ def verify_secure_request():
 
         }), 403
 
-    # -----------------------------
-    # BODY
-    # -----------------------------
+    # --------------------------------
+    # REQUEST BODY
+    # --------------------------------
 
     body = request.get_data(
         as_text=True
     )
 
-    # -----------------------------
-    # VERIFY SIGNATURE
-    # -----------------------------
+    # --------------------------------
+    # VERIFY REQUEST
+    # --------------------------------
 
     valid = (
+
         RequestVerifier
         .verify_request(
 
@@ -198,9 +152,9 @@ def verify_secure_request():
         )
     )
 
-    # -----------------------------
-    # INVALID REQUEST
-    # -----------------------------
+    # --------------------------------
+    # INVALID
+    # --------------------------------
 
     if not valid:
 
@@ -215,6 +169,12 @@ def verify_secure_request():
 
         }), 403
 
+    # --------------------------------
+    # RESET FAILURES
+    # --------------------------------
+
+    clear_failures(ip)
+
     return None
 
 # --------------------------------
@@ -222,14 +182,21 @@ def verify_secure_request():
 # --------------------------------
 
 @app.route(
+
     "/telegram",
+
     methods=["POST"]
 )
 def telegram_webhook():
 
     data = request.json
 
-    if not data or "message" not in data:
+    if (
+
+        not data or
+        "message" not in data
+
+    ):
 
         return "ok"
 
@@ -237,10 +204,15 @@ def telegram_webhook():
 
     chat_id = message["chat"]["id"]
 
-    username = message["from"].get(
-        "username",
-        ""
-    ).lower()
+    username = (
+
+        message["from"]
+        .get(
+            "username",
+            ""
+        )
+        .lower()
+    )
 
     first_name = message["from"].get(
         "first_name",
@@ -260,13 +232,17 @@ def telegram_webhook():
 
         users[chat_id] = {
 
-            "chat_id": chat_id,
+            "chat_id":
+                chat_id,
 
-            "username": username,
+            "username":
+                username,
 
-            "first_name": first_name,
+            "first_name":
+                first_name,
 
-            "phone": ""
+            "phone":
+                ""
         }
 
         requests.post(
@@ -280,10 +256,15 @@ def telegram_webhook():
                 "text":
 
                     f"Connected Successfully\n\n"
+
                     f"Username: @{username}\n"
-                    f"Id: {chat_id}\n"
-                    f"First: {first_name}\n\n"
-                    f"Press button below to share your phone number.",
+
+                    f"ID: {chat_id}\n"
+
+                    f"First Name: {first_name}\n\n"
+
+                    f"Press button below "
+                    f"to share your phone number.",
 
                 "reply_markup": {
 
@@ -310,18 +291,23 @@ def telegram_webhook():
         )
 
     # --------------------------------
-    # CONTACT SAVE
+    # SAVE CONTACT
     # --------------------------------
 
     if "contact" in message:
 
-        phone = message["contact"][
-            "phone_number"
-        ]
+        phone = (
+
+            message["contact"][
+                "phone_number"
+            ]
+        )
 
         if chat_id in users:
 
-            users[chat_id]["phone"] = phone
+            users[chat_id][
+                "phone"
+            ] = phone
 
         requests.post(
 
@@ -334,7 +320,9 @@ def telegram_webhook():
                 "text":
 
                     "Phone number saved successfully.\n\n"
-                    "You can now login inside NetBridge."
+
+                    "You can now login "
+                    "inside NetBridge."
             }
         )
 
@@ -356,23 +344,33 @@ def find_user(identifier):
 
     for user in users.values():
 
-        saved_username = user.get(
-            "username",
-            ""
-        ).lower()
+        saved_username = (
 
-        saved_phone = user.get(
-            "phone",
-            ""
-        ).replace("+", "")
+            user.get(
+                "username",
+                ""
+            )
+            .lower()
+        )
+
+        saved_phone = (
+
+            user.get(
+                "phone",
+                ""
+            )
+            .replace("+", "")
+        )
 
         if (
 
-            saved_username == clean_identifier
+            saved_username ==
+            clean_identifier
 
             or
 
-            saved_phone == clean_identifier
+            saved_phone ==
+            clean_identifier
         ):
 
             return user
@@ -384,7 +382,9 @@ def find_user(identifier):
 # --------------------------------
 
 @app.route(
+
     "/send_otp",
+
     methods=["POST"]
 )
 def send_otp():
@@ -405,6 +405,10 @@ def send_otp():
         identifier
     )
 
+    # --------------------------------
+    # USER NOT FOUND
+    # --------------------------------
+
     if matched_user is None:
 
         return jsonify({
@@ -412,34 +416,47 @@ def send_otp():
             "success": False,
 
             "message":
-                "User not found. Open bot and press /start first."
+
+                "User not found.\n"
+
+                "Open Telegram bot "
+                "and press /start first."
         })
 
-    chat_id = matched_user["chat_id"]
+    chat_id = matched_user[
+        "chat_id"
+    ]
 
     # --------------------------------
-    # OTP
+    # GENERATE OTP
     # --------------------------------
 
     otp = str(
 
         random.randint(
+
             100000,
+
             999999
         )
     )
 
-    expiry = int(time.time()) + 35
+    expiry = (
+
+        int(time.time()) + 35
+    )
 
     otp_store[chat_id] = {
 
-        "otp": otp,
+        "otp":
+            otp,
 
-        "expiry": expiry
+        "expiry":
+            expiry
     }
 
     # --------------------------------
-    # SEND MESSAGE
+    # SEND TELEGRAM MESSAGE
     # --------------------------------
 
     response = requests.post(
@@ -453,21 +470,34 @@ def send_otp():
             "text":
 
                 f"🔐 NetBridge OTP Verification\n\n"
+
                 f"OTP Code: {otp}\n\n"
-                f"Expires in 35 seconds.\n"
-                f"Do not share this code."
+
+                f"Expires in 35 seconds.\n\n"
+
+                f"Do NOT share this code."
         }
+
     ).json()
 
-    message_id = response.get(
-        "result",
-        {}
-    ).get(
-        "message_id"
+    # --------------------------------
+    # MESSAGE ID
+    # --------------------------------
+
+    message_id = (
+
+        response
+        .get(
+            "result",
+            {}
+        )
+        .get(
+            "message_id"
+        )
     )
 
     # --------------------------------
-    # AUTO DELETE
+    # AUTO DELETE OTP
     # --------------------------------
 
     def delete_message():
@@ -484,13 +514,15 @@ def send_otp():
 
                     json={
 
-                        "chat_id": chat_id,
+                        "chat_id":
+                            chat_id,
 
-                        "message_id": message_id
+                        "message_id":
+                            message_id
                     }
                 )
 
-        except:
+        except Exception:
             pass
 
     threading.Thread(
@@ -511,7 +543,9 @@ def send_otp():
 # --------------------------------
 
 @app.route(
+
     "/verify_otp",
+
     methods=["POST"]
 )
 def verify_otp():
@@ -537,6 +571,10 @@ def verify_otp():
         identifier
     )
 
+    # --------------------------------
+    # USER NOT FOUND
+    # --------------------------------
+
     if matched_user is None:
 
         return jsonify({
@@ -550,6 +588,10 @@ def verify_otp():
     chat_id = matched_user[
         "chat_id"
     ]
+
+    # --------------------------------
+    # OTP EXPIRED
+    # --------------------------------
 
     if chat_id not in otp_store:
 
@@ -566,7 +608,7 @@ def verify_otp():
     ]
 
     # --------------------------------
-    # EXPIRED
+    # EXPIRED TIME
     # --------------------------------
 
     if int(time.time()) > saved["expiry"]:
@@ -582,7 +624,7 @@ def verify_otp():
         })
 
     # --------------------------------
-    # INVALID
+    # INVALID OTP
     # --------------------------------
 
     if saved["otp"] != otp:
