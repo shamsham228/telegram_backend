@@ -1,12 +1,36 @@
+import os
 import json
+import redis
 
-from security.redis_manager import (
-    RedisManager
+REDIS_HOST = os.getenv(
+    "REDIS_HOST"
+)
+
+REDIS_PORT = int(
+    os.getenv(
+        "REDIS_PORT",
+        6379
+    )
+)
+
+REDIS_PASSWORD = os.getenv(
+    "REDIS_PASSWORD"
+)
+
+redis_client = redis.Redis(
+
+    host=REDIS_HOST,
+
+    port=REDIS_PORT,
+
+    password=REDIS_PASSWORD,
+
+    decode_responses=True,
+
+    ssl=True
 )
 
 class OtpStore:
-
-    PREFIX = "otp:"
 
     @staticmethod
     def save_otp(
@@ -15,50 +39,31 @@ class OtpStore:
 
         otp,
 
-        expiry_seconds
+        expiry_seconds=35
     ):
 
-        client = (
-            RedisManager
-            .get_client()
-        )
-
-        key = (
-            f"{OtpStore.PREFIX}"
-            f"{chat_id}"
-        )
-
-        value = json.dumps({
+        payload = {
 
             "otp": otp
-        })
+        }
 
-        client.setex(
+        redis_client.setex(
 
-            key,
+            f"otp:{chat_id}",
 
             expiry_seconds,
 
-            value
+            json.dumps(payload)
         )
 
     @staticmethod
     def get_otp(chat_id):
 
-        client = (
-            RedisManager
-            .get_client()
+        data = redis_client.get(
+            f"otp:{chat_id}"
         )
-
-        key = (
-            f"{OtpStore.PREFIX}"
-            f"{chat_id}"
-        )
-
-        data = client.get(key)
 
         if not data:
-
             return None
 
         return json.loads(data)
@@ -66,14 +71,6 @@ class OtpStore:
     @staticmethod
     def delete_otp(chat_id):
 
-        client = (
-            RedisManager
-            .get_client()
+        redis_client.delete(
+            f"otp:{chat_id}"
         )
-
-        key = (
-            f"{OtpStore.PREFIX}"
-            f"{chat_id}"
-        )
-
-        client.delete(key)
