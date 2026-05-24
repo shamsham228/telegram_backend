@@ -192,6 +192,32 @@ def verify_secure_request():
 
     return None
 
+
+@app.route("/redis_test")
+def redis_test():
+
+    try:
+
+        OtpStore.redis_client.ping()
+
+        return jsonify({
+
+            "success": True,
+
+            "message": "Redis connected"
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "success": False,
+
+            "error": str(e)
+
+        })
+        
 # --------------------------------
 # TELEGRAM WEBHOOK
 # --------------------------------
